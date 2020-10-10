@@ -5,6 +5,7 @@ import * as Constants from "~/node_common/constants";
 import B from "busboy";
 import FS from "fs";
 import path from "path";
+import Throttle from "~/node_common/vendor/throttle";
 
 import { v4 as uuid } from "uuid";
 
@@ -30,7 +31,7 @@ export const formMultipart = (req, res, { user }) =>
       // Construct a stream instead.
       tempPath = path.join(
         Constants.FILE_STORAGE_URL,
-        path.basename(`temp-${uuid()}`)
+        path.basename(`TEMPORARY-${uuid()}`)
       );
       let outStream = FS.createWriteStream(tempPath);
       return file.pipe(outStream);
@@ -46,69 +47,10 @@ export const formMultipart = (req, res, { user }) =>
     });
 
     form.on("finish", async () => {
-      // NOTE(jim):
-      // FS.createReadStream works the most consistently.
-      const readStream = FS.createReadStream(tempPath, {
-        highWaterMark: HIGH_WATER_MARK,
-      });
-      const data = LibraryManager.createLocalDataIncomplete(target);
-
-      // TODO(jim): Put this call into a file for all Textile related calls.
-      let { buckets, bucketKey } = await Utilities.getBucketAPIFromUserToken({
-        user,
-      });
-
-      if (!buckets) {
-        return reject({
-          decorator: "SERVER_BUCKETS_INIT_ISSUE",
-          error: true,
-        });
-      }
-
-      let push;
-      try {
-        push = await buckets.pushPath(bucketKey, data.name, readStream);
-      } catch (e) {
-        await FS.unlinkSync(tempPath);
-        return reject({
-          decorator: "SERVER_BUCKETS_PUSH_ISSUE",
-          error: true,
-          message: e,
-        });
-      }
-
-      // NOTE(jim)
-      // Delete temporary local file,
-      await FS.unlinkSync(tempPath);
-
-      let { buckets, bucketKey } = await Utilities.getBucketAPIFromUserToken({
-        user,
-      });
-
-      if (!buckets) {
-        return reject({
-          decorator: "SERVER_BUCKETS_INIT_ISSUE",
-          error: true,
-        });
-      }
-
-      // NOTE(jim)
-      // Get remote file size from bucket.
-      // TODO(jim): Put this call into a file for all Textile related calls.
-      let ipfs = push.path.path;
-      try {
-        const newUpload = await buckets.listIpfsPath(ipfs);
-        data.size = newUpload.size;
-      } catch (e) {
-        return reject({
-          decorator: "SERVER_BUCKETS_VERIFY_ISSUE",
-          error: true,
-          message: e,
-        });
-      }
-
-      return resolve({ decorator: "SERVER_UPLOAD_SUCCESS", data, ipfs });
+      return resolve({ decorator: "SERVER_UPLOAD_FAKED", error: true });
     });
 
-    return req.pipe(form);
+    return req
+      .pipe(new Throttle({ bytes: HIGH_WATER_MARK, interval: 250 }))
+      .pipe(form);
   });

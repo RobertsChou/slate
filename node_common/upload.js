@@ -7,6 +7,7 @@ import * as Logs from "~/node_common/script-logging";
 import AbortController from "abort-controller";
 import BusBoyConstructor from "busboy";
 import Queue from "p-queue";
+import Throttle from "~/node_common/vendor/throttle";
 
 const WORKER_NAME = "BROWSER->RENDER->TEXTILE";
 const HIGH_WATER_MARK = 1024 * 1024 * 3;
@@ -47,7 +48,7 @@ export async function formMultipart(req, res, { user, bucketName }) {
 
   const busboy = new BusBoyConstructor({
     headers: req.headers,
-    highWaterMark: HIGH_WATER_MARK,
+    highWaterMark: HIGH_WATER_MARK * 2,
   });
 
   const _createStreamAndUploadToTextile = async (writableStream) => {
@@ -166,7 +167,9 @@ export async function formMultipart(req, res, { user, bucketName }) {
       });
 
       Logs.task("req.pipe(writableStream)", WORKER_NAME);
-      req.pipe(writableStream);
+      req
+        .pipe(new Throttle({ bytes: HIGH_WATER_MARK, interval: 250 }))
+        .pipe(writableStream);
     });
   };
 

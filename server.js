@@ -268,4 +268,6 @@ app.prepare().then(async () => {
 
     console.log(`[ slate ] client: http://localhost:${Environment.PORT}`);
   });
+
+  listenServer.headersTimeout = 0;
 });
